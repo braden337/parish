@@ -1,0 +1,28 @@
+{
+  "name": "parish",
+  "version": "1.0.0",
+  "description": "A commane line interface for scraping survey data",
+  "main": "index.js",
+  "bin": {
+    "parish": "index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/braden337/parish.git"
+  },
+  "author": "braden337",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/braden337/parish/issues"
+  },
+  "homepage": "https://github.com/braden337/parish#readme",
+  "dependencies": {
+    "csv-writer": "^1.0.1",
+    "inquirer": "^6.1.0",
+    "ora": "^3.0.0",
+    "puppeteer": "^1.7.0"
+  }
+}
