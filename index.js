@@ -3,6 +3,7 @@
 const inquirer = require("inquirer");
 const puppeteer = require("puppeteer");
 const ora = require("ora");
+const moment = require("moment");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 
 const lotTypes = [
@@ -107,12 +108,12 @@ let choices = [
 
 inquirer.prompt(choices).then(answers => {
   (async () => {
-    const filename = `${new Date().toLocaleDateString()} - ${
+    const filename = `${parishes[answers.parish]} - ${
       lotTypes[answers.lotType]
-    } - ${parishes[answers.parish]}.csv`;
+    } - ${answers.lotNumber} - ${moment().format("MMM D YYYY")}.csv`;
 
     const csvWriter = createCsvWriter({
-      path: filename,
+      path: `${process.cwd()}/${filename}`,
       header: [
         { id: "lot", title: "Lot" },
         { id: "deposit", title: "Deposit" },

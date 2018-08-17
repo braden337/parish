@@ -1,6 +1,6 @@
 {
   "name": "parish",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A commane line interface for scraping survey data",
   "main": "index.js",
   "bin": {
@@ -22,6 +22,7 @@
   "dependencies": {
     "csv-writer": "^1.0.1",
     "inquirer": "^6.1.0",
+    "moment": "^2.22.2",
     "ora": "^3.0.0",
     "puppeteer": "^1.7.0"
   }
