@@ -165,7 +165,9 @@ inquirer.prompt(choices).then(answers => {
       pages = Math.ceil(results / 10);
 
       for (let i = 1; i <= pages; ) {
-        spinner.text = `Scraping page ${i++} of ${pages}`;
+        spinner.text = `Checking page ${i++} of ${pages} for ${
+          lotTypes[answers.lotType]
+        } in ${parishes[answers.parish]}`;
 
         let more = await page.$$eval(
           "table#searchResults > tbody > tr:nth-child(even)",
@@ -203,7 +205,11 @@ inquirer.prompt(choices).then(answers => {
         ]);
       }
 
-      spinner.succeed(`Scraped ${pages} pages 🐱 🎉`);
+      spinner.succeed(
+        `Went through ${pages} pages for ${lotTypes[answers.lotType]} in ${
+          parishes[answers.parish]
+        } 🐱 🎉`
+      );
 
       spinner.text = "Writing CSV file ✏️";
 
