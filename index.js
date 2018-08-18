@@ -6,6 +6,8 @@ const ora = require("ora");
 const moment = require("moment");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 
+let deposits = {};
+
 const lotTypes = [
   null,
   "Group Lot",
@@ -165,23 +167,35 @@ inquirer.prompt(choices).then(answers => {
       for (let i = 1; i <= pages; ) {
         spinner.text = `Scraping page ${i++} of ${pages}`;
 
-        let pageRecords = await page.$$eval(
+        let more = await page.$$eval(
           "table#searchResults > tbody > tr:nth-child(even)",
-          rows =>
-            rows.map(row => ({
-              lot: row.children[1].innerText.trim(),
-              deposit: row.children[2].innerText.trim(),
-              wNo: row.children[3].innerText.trim(),
-              planNo: row.children[4].innerText.trim(),
-              dosNo: row.children[5].innerText.trim(),
-              clsrNo: row.children[6].innerText.trim(),
-              district: row.children[7].innerText.trim(),
-              planType: row.children[8].innerText.trim(),
-              comments: row.children[9].innerText.trim()
-            }))
-        );
+          (rows, deposits) => {
+            let pageRecords = rows
+              .map(row => {
+                let deposit = row.children[2].innerText.trim();
+                if (deposits[deposit]) return false;
+                deposits[deposit] = true;
 
-        records.push(...pageRecords);
+                return {
+                  lot: row.children[1].innerText.trim(),
+                  deposit,
+                  wNo: row.children[3].innerText.trim(),
+                  planNo: row.children[4].innerText.trim(),
+                  dosNo: row.children[5].innerText.trim(),
+                  clsrNo: row.children[6].innerText.trim(),
+                  district: row.children[7].innerText.trim(),
+                  planType: row.children[8].innerText.trim(),
+                  comments: row.children[9].innerText.trim()
+                };
+              })
+              .filter(Boolean);
+
+            return { pageRecords, deposits };
+          },
+          deposits
+        );
+        deposits = more.deposits;
+        records.push(...more.pageRecords);
 
         await Promise.all([
           page.waitForNavigation(),
