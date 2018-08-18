@@ -117,7 +117,6 @@ inquirer.prompt(choices).then(answers => {
     const csvWriter = createCsvWriter({
       path: `${process.cwd()}/${filename}`,
       header: [
-        { id: "lot", title: "Lot" },
         { id: "deposit", title: "Deposit" },
         { id: "wNo", title: "W. No" },
         { id: "planNo", title: "Plan No" },
@@ -171,30 +170,35 @@ inquirer.prompt(choices).then(answers => {
 
         let more = await page.$$eval(
           "table#searchResults > tbody > tr:nth-child(even)",
-          (rows, deposits) => {
+          (rows, deposits, lotNumber) => {
             let pageRecords = rows
               .map(row => {
-                let deposit = row.children[2].innerText.trim();
-                if (deposits[deposit]) return false;
-                deposits[deposit] = true;
+                let columns = Array.from(row.children)
+                  .slice(1)
+                  .map(td => td.innerText.trim());
+
+                if (columns.length == 9) columns.shift();
+
+                if (deposits[columns[0]]) return false;
+                deposits[columns[0]] = true;
 
                 return {
-                  lot: row.children[1].innerText.trim(),
-                  deposit,
-                  wNo: row.children[3].innerText.trim(),
-                  planNo: row.children[4].innerText.trim(),
-                  dosNo: row.children[5].innerText.trim(),
-                  clsrNo: row.children[6].innerText.trim(),
-                  district: row.children[7].innerText.trim(),
-                  planType: row.children[8].innerText.trim(),
-                  comments: row.children[9].innerText.trim()
+                  deposit: columns[0],
+                  wNo: columns[1],
+                  planNo: columns[2],
+                  dosNo: columns[3],
+                  clsrNo: columns[4],
+                  district: columns[5],
+                  planType: columns[6],
+                  comments: columns[7]
                 };
               })
               .filter(Boolean);
 
             return { pageRecords, deposits };
           },
-          deposits
+          deposits,
+          answers.lotNumber
         );
         deposits = more.deposits;
         records.push(...more.pageRecords);
@@ -204,7 +208,6 @@ inquirer.prompt(choices).then(answers => {
           page.evaluate(i => window.submitform(i), i)
         ]);
       }
-
       spinner.succeed(
         `Went through ${pages} pages for ${lotTypes[answers.lotType]} in ${
           parishes[answers.parish]
@@ -213,7 +216,17 @@ inquirer.prompt(choices).then(answers => {
 
       spinner.text = "Writing CSV file ✏️";
 
-      csvWriter.writeRecords(records).then(() => {
+      let noPlanRecords = records
+        .filter(record => record.planNo == "")
+        .sort(
+          (a, b) => (a.deposit < b.deposit ? -1 : a.deposit > b.deposit ? 1 : 0)
+        );
+
+      let planRecords = records
+        .filter(record => Boolean(record.planNo))
+        .sort((a, b) => a.planNo - b.planNo);
+
+      csvWriter.writeRecords(planRecords.concat(noPlanRecords)).then(() => {
         spinner.succeed(`Saved results to "${filename}" 💾`);
       });
     } else {
