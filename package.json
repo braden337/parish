@@ -4,8 +4,9 @@
   "description": "A commane line interface for scraping survey data",
   "main": "index.js",
   "bin": {
-    "parish": "index.js"
+    "parish": "cli.js"
   },
+  "browser": "browser.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },

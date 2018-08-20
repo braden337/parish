@@ -1,135 +1,50 @@
-#!/usr/bin/env node
-
-const inquirer = require("inquirer");
 const puppeteer = require("puppeteer");
-const ora = require("ora");
-const moment = require("moment");
-const createCsvWriter = require("csv-writer").createObjectCsvWriter;
+const createCsvStringifier = require("csv-writer").createObjectCsvStringifier;
+
+const { lotTypes, parishes } = require("./browser");
 
 let deposits = {};
 
-const lotTypes = [
-  null,
-  "Group Lot",
-  "Lake Lot",
-  "Outer Two Mile",
-  "Park Lot",
-  "River Lot",
-  "Settlement Lot",
-  "Wood Lot",
-  "Indian Reserve"
-];
-
-const parishes = [
-  null,
-  "Baie Saint Paul",
-  "Big Eddy",
-  "Brokenhead",
-  "Cross Lake",
-  "Duck Bay North",
-  "Duck Bay South",
-  "Fairford",
-  "Fairford Mission",
-  "Fisher Bay",
-  "Fort Alexander",
-  "Grand Rapids",
-  "Grande Pointe",
-  "Headingley",
-  "High Bluff",
-  "Kildonan",
-  "Lorette",
-  "Manigotagan River",
-  "Manitoba House",
-  "Norway House",
-  "Oak Island",
-  "Oak Point",
-  "Pasquia",
-  "Pine Creek",
-  "Poplar Point",
-  "Portage La Prairie",
-  "Rat River",
-  "Riding Mountain National Park",
-  "Roman Catholic Mission Property",
-  "Saint Andrews",
-  "Saint Boniface",
-  "Saint Charles",
-  "Saint Clements",
-  "Saint Francois Xavier",
-  "Saint James",
-  "Saint John",
-  "Saint Laurent",
-  "Saint Malo",
-  "Saint Norbert",
-  "Saint Paul",
-  "Saint Peter",
-  "Saint Vital",
-  "Sainte Agathe",
-  "Sainte Anne",
-  "The Pas",
-  "Umfreville",
-  "Westbourne"
-];
-
-let choices = [
-  {
-    type: "input",
-    name: "lotNumber",
-    message: "Which lot number(s)?",
-    validate: value =>
-      /^[0-9]+((-[0-9]+)?|(,[0-9]+)+)$/i.test(value)
-        ? true
-        : "Please enter a lot number, range or list like 2 or 1-7 or 3,5,10"
-  },
-  {
-    type: "list",
-    name: "lotType",
-    message: "Which lot type?",
-    choices: (() => {
-      let c = [];
-      for (let i = 1; i < lotTypes.length; i++) {
-        c.push({ name: lotTypes[i], value: i });
+async function allRecords(lotNumber, ls, ps, out) {
+  let records = [];
+  return new Promise(async function(resolve, reject) {
+    for (let l of ls) {
+      for (let p of ps) {
+        if (out.spinner) out.spinner.start(`Loading ${l} in ${p}`);
+        let someRecords = await fetchRecords(
+          lotNumber,
+          lotTypes.indexOf(l),
+          parishes.indexOf(p),
+          out
+        ).catch(e => {
+          out.spinner.fail(e);
+          reject(e);
+        });
+        records = records.concat(someRecords);
       }
-      c.push(new inquirer.Separator());
-      return c;
-    })()
-  },
-  {
-    type: "list",
-    name: "parish",
-    message: "Which parish/settlement?",
-    choices: (() => {
-      let c = [];
-      for (let i = 1; i < parishes.length; i++) {
-        c.push({ name: parishes[i], value: i });
-      }
-      c.push(new inquirer.Separator());
-      return c;
-    })()
+    }
+    resolve(records);
+  });
+}
+
+async function fetchRecords(lotNumber, lotType, parish, out) {
+  let printer;
+
+  if (out.spinner) {
+    printer = function(message, status) {
+      if (status == "success") out.spinner.succeed(message);
+      else if (status == "fail") out.spinner.fail(message);
+      else out.spinner.text = message;
+    };
+  } else if (out.ws) {
+    printer = function(message, status) {
+      out.ws.send(JSON.stringify({ message, status }));
+    };
+  } else {
+    printer = _ => 0;
   }
-];
 
-inquirer.prompt(choices).then(answers => {
-  (async () => {
-    const filename = `${parishes[answers.parish]} - ${
-      lotTypes[answers.lotType]
-    } - ${answers.lotNumber} - ${moment().format("MMM D YYYY")}.csv`;
-
-    const csvWriter = createCsvWriter({
-      path: `${process.cwd()}/${filename}`,
-      header: [
-        { id: "deposit", title: "Deposit" },
-        { id: "wNo", title: "W. No" },
-        { id: "planNo", title: "Plan No" },
-        { id: "dosNo", title: "D of S No" },
-        { id: "clsrNo", title: "CLSR No" },
-        { id: "district", title: "District" },
-        { id: "planType", title: "Plan Type" },
-        { id: "comments", title: "Comments" }
-      ]
-    });
-
-    const spinner = ora(`Loading`).start();
-
+  return new Promise(async function(resolve) {
     const browser = await puppeteer.launch();
     const page = await browser.newPage();
     await page.goto("https://tprmb.ca/lto/jsp/documentSearchServices.jsp");
@@ -140,9 +55,9 @@ inquirer.prompt(choices).then(answers => {
     ]);
 
     await Promise.all([
-      page.type("input[type='text'][name='lotNumber']", answers.lotNumber),
-      page.select("select[name='lotTypeRefId']", String(answers.lotType)),
-      page.select("select[name='parishRefId']", String(answers.parish))
+      page.type("input[type='text'][name='lotNumber']", lotNumber),
+      page.select("select[name='lotTypeRefId']", String(lotType)),
+      page.select("select[name='parishRefId']", String(parish))
     ]);
 
     await Promise.all([
@@ -164,13 +79,15 @@ inquirer.prompt(choices).then(answers => {
       pages = Math.ceil(results / 10);
 
       for (let i = 1; i <= pages; ) {
-        spinner.text = `Checking page ${i++} of ${pages} for ${
-          lotTypes[answers.lotType]
-        } in ${parishes[answers.parish]}`;
+        printer(
+          `Checking page ${i++} of ${pages} for ${lotTypes[lotType]} in ${
+            parishes[parish]
+          }`
+        );
 
         let more = await page.$$eval(
           "table#searchResults > tbody > tr:nth-child(even)",
-          (rows, deposits, lotNumber) => {
+          (rows, deposits) => {
             let pageRecords = rows
               .map(row => {
                 let columns = Array.from(row.children)
@@ -197,42 +114,99 @@ inquirer.prompt(choices).then(answers => {
 
             return { pageRecords, deposits };
           },
-          deposits,
-          answers.lotNumber
+          deposits
         );
         deposits = more.deposits;
         records.push(...more.pageRecords);
 
-        await Promise.all([
-          page.waitForNavigation(),
-          page.evaluate(i => window.submitform(i), i)
-        ]);
+        let navigable = await page.evaluate(_ => !!window.submitform);
+        if (navigable)
+          await Promise.all([
+            page.waitForNavigation(),
+            page.evaluate(i => {
+              window.submitform(i);
+            }, i)
+          ]);
       }
-      spinner.succeed(
-        `Went through ${pages} pages for ${lotTypes[answers.lotType]} in ${
-          parishes[answers.parish]
-        } 🐱 🎉`
+
+      printer(
+        `${pages} page${pages == 1 ? "" : "s"} for ${lotTypes[lotType]} in ${
+          parishes[parish]
+        } 🐱 🎉`,
+        "success"
       );
 
-      spinner.text = "Writing CSV file ✏️";
+      printer("Writing CSV file ✏️");
 
-      let noPlanRecords = records
-        .filter(record => record.planNo == "")
-        .sort(
-          (a, b) => (a.deposit < b.deposit ? -1 : a.deposit > b.deposit ? 1 : 0)
-        );
-
-      let planRecords = records
-        .filter(record => Boolean(record.planNo))
-        .sort((a, b) => a.planNo - b.planNo);
-
-      csvWriter.writeRecords(planRecords.concat(noPlanRecords)).then(() => {
-        spinner.succeed(`Saved results to "${filename}" 💾`);
-      });
+      await browser.close();
+      resolve(records);
     } else {
-      spinner.fail("There aren't any results to save 😔");
+      printer(
+        `0 pages for ${lotTypes[lotType]} in ${parishes[parish]} 😔`,
+        "fail"
+      );
+      await browser.close();
+      resolve([]);
     }
+  });
+}
 
+function sortRecords(records) {
+  let noPlanRecords = records
+    .filter(record => record.planNo == "")
+    .sort(
+      (a, b) => (a.deposit < b.deposit ? -1 : a.deposit > b.deposit ? 1 : 0)
+    );
+
+  let planRecords = records
+    .filter(record => Boolean(record.planNo))
+    .sort((a, b) => a.planNo - b.planNo);
+
+  return planRecords.concat(noPlanRecords);
+}
+
+function base64Records(records) {
+  const csvStringifier = createCsvStringifier({
+    header: [
+      { id: "deposit", title: "Deposit" },
+      { id: "wNo", title: "W. No" },
+      { id: "planNo", title: "Plan No" },
+      { id: "dosNo", title: "D of S No" },
+      { id: "clsrNo", title: "CLSR No" },
+      { id: "district", title: "District" },
+      { id: "planType", title: "Plan Type" },
+      { id: "comments", title: "Comments" }
+    ]
+  });
+  return Buffer.from(
+    csvStringifier.getHeaderString() + csvStringifier.stringifyRecords(records)
+  ).toString("base64");
+}
+
+async function siteIsDown() {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+  await page.goto("https://tprmb.ca/lto/jsp/documentSearchServices.jsp");
+  // await page.goto("https://tprmb.ca/sitedown/tpr.down.html");
+
+  let scheduledMaintenance = await page.evaluate(_ => {
+    let table = document.querySelector("tbody");
+
+    return !!table && table
+      ? table.innerText.indexOf("scheduled maintenance") != -1
+      : false;
+  });
+
+  return new Promise(async function(resolve) {
+    resolve(scheduledMaintenance);
     await browser.close();
-  })();
-});
+  });
+}
+
+module.exports = {
+  fetchRecords,
+  sortRecords,
+  base64Records,
+  allRecords,
+  siteIsDown
+};
