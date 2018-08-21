@@ -24,8 +24,7 @@ const header = [
   { id: "comments", title: "Comments" }
 ];
 
-async function interactive(out) {
-  out.spinner.stop();
+async function interactive(spinner) {
   let choices = [
     {
       type: "input",
@@ -74,23 +73,23 @@ async function interactive(out) {
       header
     });
 
-    out.spinner.start("Loading");
+    spinner.start("Loading");
 
     let records = await fetchRecords(
       answers.lotNumber,
       answers.lotType,
       answers.parish,
-      out
+      { spinner }
     );
     if (records.length)
       csvWriter.writeRecords(sortRecords(records)).then(() => {
-        out.spinner.succeed(`Saved results to "${filename}" 💾`);
+        spinner.succeed(`Saved results to "${filename}" 💾`);
       });
-    else out.spinner.fail("No results to save");
+    else spinner.fail("No results to save");
   });
 }
 
-async function allParishes(lotNumber, lotTypes, parishes, out) {
+async function allParishes(lotNumber, lotTypes, parishes, spinner) {
   const filename = `${moment().format("MMM D YYYY")}.csv`;
 
   const csvWriter = createCsvWriter({
@@ -98,10 +97,10 @@ async function allParishes(lotNumber, lotTypes, parishes, out) {
     header
   });
 
-  let records = await allRecords(lotNumber, lotTypes, parishes, out);
+  let records = await allRecords(lotNumber, lotTypes, parishes, { spinner });
 
   csvWriter.writeRecords(sortRecords(records)).then(() => {
-    out.spinner.succeed(`Saved results to "${filename}" 💾`);
+    spinner.succeed(`Saved results to "${filename}" 💾`);
   });
 }
 
@@ -112,12 +111,16 @@ async function allParishes(lotNumber, lotTypes, parishes, out) {
   let spinner = ora("Checking that site is available").start();
   let m = await siteIsDown();
   if (!m) {
+    spinner.succeed("Site is available");
     if (all == "all" && /^[0-9]+((-[0-9]+)?|(,[0-9]+)+)$/i.test(lotNumber)) {
-      await allParishes(lotNumber, lotTypes.slice(1), parishes.slice(1), {
+      await allParishes(
+        lotNumber,
+        lotTypes.slice(1),
+        parishes.slice(1),
         spinner
-      });
+      );
     } else {
-      await interactive({ spinner });
+      await interactive(spinner);
     }
   } else {
     spinner.fail("Site is down for scheduled maintenance");

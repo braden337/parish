@@ -203,6 +203,14 @@ async function siteIsDown() {
   });
 }
 
+function imageToDataURL(image) {
+  let canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  canvas.getContext("2d").drawImage(image, 0, 0);
+  return canvas.toDataURL();
+}
+
 module.exports = {
   fetchRecords,
   sortRecords,
