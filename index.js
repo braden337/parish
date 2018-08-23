@@ -6,6 +6,11 @@ const ora = require("ora");
 const moment = require("moment");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 
+const strip = a => {
+  let m = a.match(/(\d+)/);
+  if (m) return m[0];
+};
+
 let deposits = {};
 
 const lotTypes = [
@@ -158,7 +163,6 @@ inquirer.prompt(choices).then(answers => {
 
     if (results) {
       let pages = 0;
-      let records = [];
       results = results.split(" ");
       results = Number(results[results.length - 1]);
       pages = Math.ceil(results / 10);
@@ -170,44 +174,58 @@ inquirer.prompt(choices).then(answers => {
 
         let more = await page.$$eval(
           "table#searchResults > tbody > tr:nth-child(even)",
-          (rows, deposits, lotNumber) => {
-            let pageRecords = rows
-              .map(row => {
-                let columns = Array.from(row.children)
-                  .slice(1)
-                  .map(td => td.innerText.trim());
+          (rows, deposits) => {
+            for (let row of rows) {
+              let columns = Array.from(row.children)
+                .slice(1)
+                .map(td => td.innerText.trim());
 
-                if (columns.length == 9) columns.shift();
+              if (columns.length == 9) columns.shift();
 
-                if (deposits[columns[0]]) return false;
-                deposits[columns[0]] = true;
+              let deposit = columns[0];
+              let wNo = columns[1];
+              let planNo = columns[2];
+              let dosNo = columns[3];
+              let clsrNo = columns[4];
+              let district = columns[5];
+              let planType = columns[6];
+              let comments = columns[7];
 
-                return {
-                  deposit: columns[0],
-                  wNo: columns[1],
-                  planNo: columns[2],
-                  dosNo: columns[3],
-                  clsrNo: columns[4],
-                  district: columns[5],
-                  planType: columns[6],
-                  comments: columns[7]
-                };
-              })
-              .filter(Boolean);
+              let current = {
+                deposit,
+                wNo,
+                planNo,
+                dosNo,
+                clsrNo,
+                district,
+                planType,
+                comments
+              };
 
-            return { pageRecords, deposits };
+              let existing = deposits[current.deposit];
+
+              if (
+                !existing ||
+                existing.comments.length < current.comments.length
+              )
+                deposits[deposit] = current;
+            }
+
+            return { deposits };
           },
-          deposits,
-          answers.lotNumber
+          deposits
         );
+
         deposits = more.deposits;
-        records.push(...more.pageRecords);
 
         await Promise.all([
           page.waitForNavigation(),
           page.evaluate(i => window.submitform(i), i)
         ]);
       }
+
+      let records = Object.values(deposits);
+
       spinner.succeed(
         `Went through ${pages} pages for ${lotTypes[answers.lotType]} in ${
           parishes[answers.parish]
@@ -218,13 +236,23 @@ inquirer.prompt(choices).then(answers => {
 
       let noPlanRecords = records
         .filter(record => record.planNo == "")
-        .sort(
-          (a, b) => (a.deposit < b.deposit ? -1 : a.deposit > b.deposit ? 1 : 0)
-        );
+        .sort((a, b) => {
+          if (Number(a.deposit) && Number(b.deposit)) {
+            return a.deposit - b.deposit;
+          } else {
+            return Number(strip(a.deposit)) - Number(strip(b.deposit));
+          }
+        });
 
       let planRecords = records
         .filter(record => Boolean(record.planNo))
-        .sort((a, b) => a.planNo - b.planNo);
+        .sort((a, b) => {
+          if (Number(a.planNo) && Number(b.planNo)) {
+            return a.planNo - b.planNo;
+          } else if (Number(a.planNo)) {
+            return -1;
+          } else return a.planNo < b.planNo ? -1 : a.planNo > b.planNo ? 1 : 0;
+        });
 
       csvWriter.writeRecords(planRecords.concat(noPlanRecords)).then(() => {
         spinner.succeed(`Saved results to "${filename}" 💾`);
