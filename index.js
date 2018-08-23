@@ -3,6 +3,11 @@ const createCsvStringifier = require("csv-writer").createObjectCsvStringifier;
 
 const { lotTypes, parishes } = require("./browser");
 
+const strip = a => {
+  let m = a.match(/(\d+)/);
+  if (m) return m[0];
+};
+
 let deposits = {};
 
 async function allRecords(lotNumber, ls, ps, out) {
@@ -73,7 +78,6 @@ async function fetchRecords(lotNumber, lotType, parish, out) {
 
     if (results) {
       let pages = 0;
-      let records = [];
       results = results.split(" ");
       results = Number(results[results.length - 1]);
       pages = Math.ceil(results / 10);
@@ -88,36 +92,48 @@ async function fetchRecords(lotNumber, lotType, parish, out) {
         let more = await page.$$eval(
           "table#searchResults > tbody > tr:nth-child(even)",
           (rows, deposits) => {
-            let pageRecords = rows
-              .map(row => {
-                let columns = Array.from(row.children)
-                  .slice(1)
-                  .map(td => td.innerText.trim());
+            for (let row of rows) {
+              let columns = Array.from(row.children)
+                .slice(1)
+                .map(td => td.innerText.trim());
 
-                if (columns.length == 9) columns.shift();
+              if (columns.length == 9) columns.shift();
 
-                if (deposits[columns[0]]) return false;
-                deposits[columns[0]] = true;
+              let deposit = columns[0];
+              let wNo = columns[1];
+              let planNo = columns[2];
+              let dosNo = columns[3];
+              let clsrNo = columns[4];
+              let district = columns[5];
+              let planType = columns[6];
+              let comments = columns[7];
 
-                return {
-                  deposit: columns[0],
-                  wNo: columns[1],
-                  planNo: columns[2],
-                  dosNo: columns[3],
-                  clsrNo: columns[4],
-                  district: columns[5],
-                  planType: columns[6],
-                  comments: columns[7]
-                };
-              })
-              .filter(Boolean);
+              let current = {
+                deposit,
+                wNo,
+                planNo,
+                dosNo,
+                clsrNo,
+                district,
+                planType,
+                comments
+              };
 
-            return { pageRecords, deposits };
+              let existing = deposits[current.deposit];
+
+              if (
+                !existing ||
+                existing.comments.length < current.comments.length
+              )
+                deposits[deposit] = current;
+            }
+
+            return { deposits };
           },
           deposits
         );
+
         deposits = more.deposits;
-        records.push(...more.pageRecords);
 
         let navigable = await page.evaluate(_ => !!window.submitform);
         if (navigable)
@@ -129,14 +145,15 @@ async function fetchRecords(lotNumber, lotType, parish, out) {
           ]);
       }
 
-      printer(
-        `${pages} page${pages == 1 ? "" : "s"} for ${lotTypes[lotType]} in ${
+      let records = Object.values(deposits);
+
+      out.spinner.succeed(
+        `Went through ${pages} pages for ${lotTypes[lotType]} in ${
           parishes[parish]
-        } 🐱 🎉`,
-        "success"
+        } 🐱 🎉`
       );
 
-      printer("Writing CSV file ✏️");
+      out.spinner.text = "Writing CSV file ✏️";
 
       await browser.close();
       resolve(records);
@@ -154,13 +171,23 @@ async function fetchRecords(lotNumber, lotType, parish, out) {
 function sortRecords(records) {
   let noPlanRecords = records
     .filter(record => record.planNo == "")
-    .sort(
-      (a, b) => (a.deposit < b.deposit ? -1 : a.deposit > b.deposit ? 1 : 0)
-    );
+    .sort((a, b) => {
+      if (Number(a.deposit) && Number(b.deposit)) {
+        return a.deposit - b.deposit;
+      } else {
+        return Number(strip(a.deposit)) - Number(strip(b.deposit));
+      }
+    });
 
   let planRecords = records
     .filter(record => Boolean(record.planNo))
-    .sort((a, b) => a.planNo - b.planNo);
+    .sort((a, b) => {
+      if (Number(a.planNo) && Number(b.planNo)) {
+        return a.planNo - b.planNo;
+      } else if (Number(a.planNo)) {
+        return -1;
+      } else return a.planNo < b.planNo ? -1 : a.planNo > b.planNo ? 1 : 0;
+    });
 
   return planRecords.concat(noPlanRecords);
 }
@@ -187,7 +214,7 @@ async function siteIsDown() {
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.goto("https://tprmb.ca/lto/jsp/documentSearchServices.jsp");
-  // await page.goto("https://tprmb.ca/sitedown/tpr.down.html");
+  // await page.goto("https://  tprmb.ca/sitedown/tpr.down.html");
 
   let scheduledMaintenance = await page.evaluate(_ => {
     let table = document.querySelector("tbody");
